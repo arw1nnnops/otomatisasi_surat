@@ -226,8 +226,8 @@
           </button>
         </div>
 
-        <!-- Slot 1: Template Kantor -->
-        <div class="space-y-1.5">
+        <!-- Slot 1: Template Kantor (disembunyikan secara visual, tetap aktif di belakang layar) -->
+        <div class="space-y-1.5 hidden">
           <div class="flex items-center justify-between gap-2">
             <span class="text-xs font-semibold text-[#0e252c]">1. Template kantor</span>
             <button id="btn-reset-template" type="button" class="text-[11px] font-medium text-[#526872] hover:text-[#105565] hidden">
@@ -246,7 +246,7 @@
 
         <!-- Slot 2: Surat Sumber (Memo Masuk) -->
         <div class="space-y-1.5">
-          <span class="block text-xs font-semibold text-[#0e252c]">2. Surat sumber (memo masuk)</span>
+          <span class="hidden text-xs font-semibold text-[#0e252c]">2. Surat sumber (memo masuk)</span>
           <label for="memo-file-input" id="dropzone" class="block border-[1.5px] border-dashed border-[#c2cfd6] hover:border-[#105565] hover:bg-[#f6fafb] rounded-lg px-4 py-8 text-center cursor-pointer transition-colors">
             <input id="memo-file-input" type="file" accept=".doc,.docx,.pdf,.txt,.png,.jpg,.jpeg" class="hidden" />
             <div id="dropzone-title" class="text-sm font-semibold text-[#0e252c]">
@@ -268,7 +268,7 @@
               Pakai contoh Memo BNI
             </button>
           </div>
-          <button id="btn-toggle-ai" type="button" class="text-[#e8681f] hover:underline font-semibold flex items-center gap-1">
+          <button id="btn-toggle-ai" type="button" class="hidden text-[#e8681f] hover:underline font-semibold items-center gap-1">
             <span id="ai-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block"></span>
             <span id="ai-toggle-label">Aktifkan AI (Gemini)</span>
           </button>
@@ -1131,8 +1131,7 @@ CC: Divisi MCM, WEM, COP, BOP, CXC dan CRS`
               pageImages.push(dataUrl.split(',')[1]);
             }
             if (!state.apiKey) {
-              els.aiConfigWrap.classList.remove('hidden');
-              els.fileHelperNote.textContent = `PDF ini berupa hasil scan gambar (${pdf.numPages} halaman). Aktifkan AI (Gemini API Key) di atas agar AI bisa membaca langsung isi scan PDF ini.`;
+                els.fileHelperNote.textContent = `PDF ini berupa hasil scan gambar (${pdf.numPages} halaman). Aktifkan AI (Gemini API Key) di atas agar AI bisa membaca langsung isi scan PDF ini.`;
               els.fileHelperNote.classList.remove('hidden');
             }
             return { text: '', tableRows: null, imageBase64: pageImages, imageMime: 'image/jpeg' };
@@ -1150,7 +1149,6 @@ CC: Divisi MCM, WEM, COP, BOP, CXC dan CRS`
             reader.readAsDataURL(file);
           });
           if (!state.apiKey) {
-            els.aiConfigWrap.classList.remove('hidden');
             els.fileHelperNote.textContent = 'File gambar terpilih. Masukkan Gemini API Key di atas agar AI bisa membaca gambar memo otomatis, atau tempel teksnya manual.';
             els.fileHelperNote.classList.remove('hidden');
           }
@@ -1161,6 +1159,11 @@ CC: Divisi MCM, WEM, COP, BOP, CXC dan CRS`
 
       async function handleFileSelection(file) {
         if (!file) return;
+        state.rawText = '';
+        state.tableRows = null;
+        state.imageBase64 = null;
+        state.imageMime = null;
+        els.rawMemoText.value = '';
         els.dropzoneTitle.textContent = file.name;
         els.dropzoneSub.textContent = 'Membaca isi memo...';
         els.btnReset.classList.remove('hidden');
@@ -1177,10 +1180,13 @@ CC: Divisi MCM, WEM, COP, BOP, CXC dan CRS`
               : 'Isi memo terbaca — surat langsung disusun';
             await composeLetter();
           } else if (imageBase64) {
-            els.dropzoneSub.textContent = state.apiKey
-              ? 'Gambar siap dibaca AI — klik Susun surat'
-              : 'Aktifkan AI (Gemini) untuk baca gambar ini';
-            showToast(`Gambar "${file.name}" siap diproses.`);
+            if (state.apiKey) {
+              els.dropzoneSub.textContent = 'Scan terbaca — AI sedang menyusun surat...';
+              await composeLetter();
+            } else {
+              els.dropzoneSub.textContent = 'Masukkan & Simpan API Key Gemini lalu klik Susun surat';
+                showToast(`File scan "${file.name}" siap. Simpan Gemini API Key lalu klik Susun surat.`);
+            }
           } else {
             els.dropzoneSub.textContent = 'Tempel teks memo di kotak bawah';
           }
@@ -1344,11 +1350,12 @@ Kembalikan HANYA JSON valid dengan kunci:
 }`;
 
         const parts = [];
-        let promptText = 'Analisis surat sumber (memo masuk) berikut dan sesuaikan ke format template kantor sesuai aturan KBBI:\n\n';
-        if (state.customTemplateText) {
-          promptText += '[TEMPLATE KANTOR ACUAN]:\n' + state.customTemplateText.slice(0, 3500) + '\n\n[SURAT SUMBER / MEMO MASUK]:\n';
+        let promptText = 'Baca HANYA isi dari SURAT SUMBER (MEMO MASUK) yang dilampirkan di bawah ini (baik teks maupun gambar scan). Ambil 100% perihal, nomor memo, tanggal memo, isi poin, tabel, arahan, PIC, dan CC murni dari memo masuk ini, lalu susun dalam JSON sesuai aturan S-Seg Wil NSD dan bahasa baku KBBI:\n\n';
+        if (rawText) {
+          promptText += stripAttachmentsAfterSignature(rawText);
+        } else if (imageBase64) {
+          promptText += '[Isi memo terdapat pada gambar/halaman scan PDF terlampir. Baca seluruh teks, angka, tabel, dan tanda tangan pada gambar tersebut dengan teliti.]';
         }
-        if (rawText) promptText += stripAttachmentsAfterSignature(rawText);
         if (Array.isArray(tableRows) && tableRows.length > 0) {
           promptText += '\n\n[Tabel dalam memo]:\n' + JSON.stringify(tableRows);
         }
@@ -1365,26 +1372,49 @@ Kembalikan HANYA JSON valid dengan kunci:
           }
         }
 
-        const modelId = state.modelId || 'gemini-4-hydrogen';
-        const payload = {
+        const primaryModel = state.modelId || 'gemini-4-hydrogen';
+        const candidates = [...new Set([primaryModel, 'gemini-2.5-flash'])];
+        const reqBody = JSON.stringify({
           system_instruction: { parts: [{ text: systemInstruction }] },
           contents: [{ role: 'user', parts }],
           generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
-        };
-        let resp;
-        if (state.apiKey) {
+        });
+
+        let lastErr = '';
+        for (const modelId of candidates) {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(state.apiKey)}`;
-          resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        } else {
-          resp = await fetch('/api/compose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: modelId, payload }) });
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: reqBody
+          });
+          if (!resp.ok) {
+            const errBody = await resp.text().catch(() => '');
+            lastErr = `Model ${modelId} gagal (${resp.status})`;
+            if (resp.status === 401 || resp.status === 403) {
+              throw new Error('API Key Gemini tidak valid atau belum aktif. Periksa kembali API Key Anda.');
+            }
+            if (errBody && resp.status !== 404 && resp.status !== 429 && resp.status !== 503) {
+              throw new Error(`${lastErr}: ${errBody.slice(0, 120)}`);
+            }
+            continue;
+          }
+          const json = await resp.json();
+          let rawOut = (json?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
+          // Strip markdown code fences if model returned ```json ... ```
+          rawOut = rawOut.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+          const firstBrace = rawOut.indexOf('{');
+          const lastBrace = rawOut.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            rawOut = rawOut.slice(firstBrace, lastBrace + 1);
+          }
+          if (!rawOut) {
+            lastErr = `Model ${modelId} mengembalikan respons kosong`;
+            continue;
+          }
+          return JSON.parse(rawOut);
         }
-        if (!resp.ok) {
-          const errText = await resp.text().catch(() => '');
-          throw new Error(`Gemini API gagal (${resp.status})${errText ? ': periksa API Key' : ''}`);
-        }
-        const json = await resp.json();
-        const rawOut = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        return JSON.parse(rawOut);
+        throw new Error(lastErr || 'Gagal menghubungi Gemini API.');
       }
 
       async function composeLetter() {
@@ -1394,11 +1424,13 @@ Kembalikan HANYA JSON valid dengan kunci:
           return;
         }
 
-        const useServerOrKey = true;
-        if (useServerOrKey) {
+        if (state.apiKey) {
           const origLabel = els.btnCompose.textContent;
           els.btnCompose.disabled = true;
           els.btnCompose.textContent = 'AI sedang membaca memo...';
+          els.emptyPreviewState.textContent = 'AI sedang membaca isi memo dan menyusunnya ke template surat NSD... Mohon tunggu sebentar.';
+          els.emptyPreviewState.classList.remove('hidden');
+          els.generatedLetterWrap.classList.add('hidden');
           try {
             const aiData = await callGeminiAI(text, state.imageBase64, state.imageMime, state.tableRows);
             const { html } = renderStructuredAiToHtml(aiData);
@@ -1406,12 +1438,20 @@ Kembalikan HANYA JSON valid dengan kunci:
             els.emptyPreviewState.classList.add('hidden');
             els.generatedLetterWrap.classList.remove('hidden');
             setStep(2);
+            els.dropzoneSub.textContent = 'Berhasil disusun oleh AI';
             els.kbbiBadge.textContent = 'Disusun oleh AI (KBBI)';
             els.kbbiBadge.classList.remove('hidden');
             showToast('AI selesai membaca memo dan menyusun surat sesuai template NSD.');
             return;
           } catch (err) {
-            showToast((err.message || 'AI gagal merespons') + ' — beralih ke mode lokal.');
+            const msg = err.message || 'AI gagal merespons';
+            if (!text) {
+              els.emptyPreviewState.textContent = `Gagal memproses file scan: ${msg}. Pastikan API Key valid atau coba unggah ulang.`;
+              els.dropzoneSub.textContent = 'Gagal dibaca AI — cek pesan di sebelah kanan';
+              showToast(msg);
+              return;
+            }
+            showToast(msg + ' — beralih ke mode lokal.');
           } finally {
             els.btnCompose.disabled = false;
             els.btnCompose.textContent = origLabel;
@@ -1601,15 +1641,14 @@ Kembalikan HANYA JSON valid dengan kunci:
           : state.modelId === 'gemini-4-hydrogen'
             ? 'Gemini 4 Hydrogen'
             : 'Gemini 2.5 Flash';
-        const useServerOrKey = true;
-        if (useServerOrKey) {
+        if (state.apiKey) {
           els.aiDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block';
           els.aiToggleLabel.textContent = `AI Aktif (${shortName})`;
           els.aiStatusPill.textContent = `Aktif — ${shortName}`;
           els.aiStatusPill.className = 'text-[11px] font-semibold text-emerald-700';
         } else {
-          els.aiDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block';
-          els.aiToggleLabel.textContent = `AI Aktif (${shortName})`;
+          els.aiDot.className = 'w-1.5 h-1.5 rounded-full bg-[#e8681f] inline-block';
+          els.aiToggleLabel.textContent = `${shortName} (Isi API Key)`;
           els.aiStatusPill.textContent = `${shortName} (Menunggu API Key)`;
           els.aiStatusPill.className = 'text-[11px] font-medium text-[#e8681f]';
         }
