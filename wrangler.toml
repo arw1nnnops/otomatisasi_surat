@@ -1,3 +1,5 @@
-name = "surat-nsd"
+name = "otomatisasi-surat"
 compatibility_date = "2026-11-19"
-pages_build_output_dir = "public"
+
+[assets]
+directory = "./public"
