@@ -2,4 +2,4 @@ name = "otomatisasi-surat"
 compatibility_date = "2026-11-19"
 
 [assets]
-directory = "./surat-nsd-cloudflare/public"
+directory = "."
